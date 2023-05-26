@@ -12,7 +12,7 @@ const debugOutgoing = debug.sub('outgoing')
 
 export const MIDDLEWARE_NAME = 'line.sendMessage'
 
-const outgoingTypes = ['typing', 'text', 'single-choice', 'image', 'carousel']
+const outgoingTypes = ['typing', 'text', 'single-choice', 'image', 'carousel', 'card']
 
 export class LineClient {
   private logger: sdk.Logger
@@ -32,7 +32,9 @@ export class LineClient {
 
   async initialize() {
     if (!this.config.channelAccessToken || !this.config.channelSecret) {
-      return this.logger.error(`[${this.botId}] channelAccessToken, channelSecret must be configured to use this channel.`)
+      return this.logger.error(
+        `[${this.botId}] channelAccessToken, channelSecret must be configured to use this channel.`
+      )
     }
 
     const url = (await this.router.getPublicPath()) + this.route
@@ -102,6 +104,8 @@ export class LineClient {
       await this.sendImageMessage(event)
     } else if (messageType === 'carousel') {
       await this.sendCarouselMessage(event)
+    } else if (messageType === 'card') {
+      await this.sendCardMessage(event)
     } else {
       // unsupported other types of event
     }
@@ -177,12 +181,83 @@ export class LineClient {
     })
   }
 
+  async sendCardMessage(event: sdk.IO.Event) {
+    console.log(event.payload.actions)
+    const title = event.payload.subtitle ? event.payload.title : null
+    const subtitle = event.payload.subtitle ? event.payload.subtitle : event.payload.title
+    const actions = event.payload.actions.map(action => {
+      switch (action.action) {
+        case 'Say something':
+          return {
+            type: 'message',
+            label: action.title,
+            text: action.text
+          }
+        case 'Open URL':
+          return {
+            type: 'uri',
+            label: action.title,
+            uri: action.url
+          }
+        case 'Postback':
+          return {
+            type: 'postback',
+            label: action.title,
+            data: action.payload,
+            displayText: action.title
+          }
+      }
+    })
+    await this.sendMessage(event, {
+      type: 'template',
+      altText: 'This is a buttons template',
+      template: {
+        type: 'buttons',
+        thumbnailImageUrl: event.payload.image,
+        imageAspectRatio: 'rectangle',
+        imageSize: 'cover',
+        imageBackgroundColor: '#FFFFFF',
+        title,
+        text: subtitle,
+        // defaultAction: {
+        //   type: 'uri',
+        //   label: 'View detail',
+        //   uri: 'http://example.com/page/123'
+        // },
+        actions
+        // actions: [
+        //   {
+        //     type: 'postback',
+        //     label: 'Buy',
+        //     data: 'action=buy&itemid=123'
+        //   },
+        //   {
+        //     type: 'postback',
+        //     label: 'Add to cart',
+        //     data: 'action=add&itemid=123'
+        //   },
+        //   {
+        //     type: 'uri',
+        //     label: 'View detail',
+        //     uri: 'http://example.com/page/123'
+        //   }
+        // ]
+      }
+    })
+  }
+
   async sendMessage(event: sdk.IO.Event, args: any) {
     const message: any = {
       ...args
     }
     debugOutgoing('Sending message', message)
-    return this.lineClient.pushMessage(event.target, message)
+    try {
+      const response = await this.lineClient.pushMessage(event.target, message)
+      return response
+    } catch (e) {
+      console.log(JSON.stringify(e))
+      throw e
+    }
   }
 }
 
